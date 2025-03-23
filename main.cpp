@@ -90,6 +90,11 @@ SDispatchResult monocleOn(std::string arg) {
     workspaces.push_back(currentWorkspace);
 
     std::vector<PHLWINDOW> windows = Monocle::getWindowsOnWorkspace();
+
+    if (windows.empty()) {
+        return SDispatchResult{};
+    }
+
     auto firstWindow = windows[0];
     if (!firstWindow->m_sGroupData.pNextWindow)
         firstWindow->createGroup();
@@ -115,6 +120,10 @@ SDispatchResult monocleOff(std::string arg) {
     }
     if (toRemove != SIZE_MAX)
         workspaces.erase(workspaces.begin() + toRemove);
+
+    if (g_pCompositor->m_pLastWindow.expired()) {
+        return SDispatchResult{};
+    }
 
     if (g_pCompositor->m_pLastWindow->m_sGroupData.pNextWindow)
         HyprlandAPI::invokeHyprctlCommand("dispatch", "togglegroup");
