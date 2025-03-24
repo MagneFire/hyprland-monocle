@@ -76,6 +76,66 @@ void createGroup(PHLWINDOW window) {
         g_pEventManager->postEvent(SHyprIPCEvent{"togglegroup", std::format("1,{:x}", (uintptr_t)window)});
     }
 }
+
+void destroyGroup(PHLWINDOW window) {
+    if (window->m_sGroupData.pNextWindow == window->m_pSelf) {
+        if (window->m_eGroupRules & GROUP_SET_ALWAYS) {
+            Debug::log(LOG, "destoryGroup: window:{:x},title:{} has rule [group set always], ignored", (uintptr_t)window, window->m_szTitle);
+            return;
+        }
+        window->m_sGroupData.pNextWindow.reset();
+        window->m_sGroupData.head = false;
+        window->updateWindowDecos();
+        if (window->m_pWorkspace) {
+            window->m_pWorkspace->updateWindows();
+            window->m_pWorkspace->updateWindowData();
+        }
+        g_pLayoutManager->getCurrentLayout()->recalculateMonitor(window->monitorID());
+        g_pCompositor->updateAllWindowsAnimatedDecorationValues();
+
+        g_pEventManager->postEvent(SHyprIPCEvent{"togglegroup", std::format("0,{:x}", (uintptr_t)window)});
+        return;
+    }
+
+    std::string            addresses;
+    PHLWINDOW              curr = window->m_pSelf.lock();
+    std::vector<PHLWINDOW> members;
+    do {
+        const auto PLASTWIN = curr;
+        curr                = curr->m_sGroupData.pNextWindow.lock();
+        PLASTWIN->m_sGroupData.pNextWindow.reset();
+        curr->setHidden(false);
+        members.push_back(curr);
+
+        addresses += std::format("{:x},", (uintptr_t)curr.get());
+    } while (curr.get() != window.get());
+
+    for (auto const& w : members) {
+        if (w->m_sGroupData.head)
+            g_pLayoutManager->getCurrentLayout()->onWindowRemoved(curr);
+        w->m_sGroupData.head = false;
+    }
+
+    const bool GROUPSLOCKEDPREV        = g_pKeybindManager->m_bGroupsLocked;
+    g_pKeybindManager->m_bGroupsLocked = true;
+    for (auto const& w : members) {
+        g_pLayoutManager->getCurrentLayout()->onWindowCreated(w);
+        w->updateWindowDecos();
+    }
+    g_pKeybindManager->m_bGroupsLocked = GROUPSLOCKEDPREV;
+
+    if (window->m_pWorkspace) {
+        window->m_pWorkspace->updateWindows();
+        window->m_pWorkspace->updateWindowData();
+    }
+    g_pLayoutManager->getCurrentLayout()->recalculateMonitor(window->monitorID());
+    g_pCompositor->updateAllWindowsAnimatedDecorationValues();
+
+    if (!addresses.empty())
+        addresses.pop_back();
+    g_pEventManager->postEvent(SHyprIPCEvent{"togglegroup", std::format("0,{}", addresses)});
+}
+
 }
 
 SDispatchResult monocleOn(std::string arg) {
@@ -123,7 +183,7 @@ SDispatchResult monocleOff(std::string arg) {
 
     if (g_pCompositor->m_pLastWindow->m_sGroupData.pNextWindow) {
         auto window = g_pCompositor->m_pLastWindow.lock();
-        window->destroyGroup();
+        Monocle::destroyGroup(window);
     }
 
     return SDispatchResult{};
