@@ -3,6 +3,7 @@
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/debug/Log.hpp>
 #include <hyprland/src/managers/LayoutManager.hpp>
+#include <hyprland/src/managers/EventManager.hpp>
 #include <hyprland/src/render/decorations/CHyprGroupBarDecoration.hpp>
 #include <format>
 
@@ -81,6 +82,30 @@ void moveIntoGroup(std::string args) {
     moveWindowIntoGroup(PWINDOW, PWINDOWINDIR);
 }
 
+void createGroup(PHLWINDOW window) {
+    if (window->m_sGroupData.deny) {
+        Debug::log(LOG, "createGroup: window:{:x},title:{} is denied as a group, ignored", (uintptr_t)window, window->m_szTitle);
+        return;
+    }
+
+    if (window->m_sGroupData.pNextWindow.expired()) {
+        window->m_sGroupData.pNextWindow = window->m_pSelf;
+        window->m_sGroupData.head        = true;
+        window->m_sGroupData.locked      = false;
+        window->m_sGroupData.deny        = false;
+
+        window->addWindowDeco(makeUnique<CHyprGroupBarDecoration>(window));
+
+        if (window->m_pWorkspace) {
+            window->m_pWorkspace->updateWindows();
+            window->m_pWorkspace->updateWindowData();
+        }
+        g_pLayoutManager->getCurrentLayout()->recalculateMonitor(window->monitorID());
+        g_pCompositor->updateAllWindowsAnimatedDecorationValues();
+
+        g_pEventManager->postEvent(SHyprIPCEvent{"togglegroup", std::format("1,{:x}", (uintptr_t)window)});
+    }
+}
 }
 
 SDispatchResult monocleOn(std::string arg) {
@@ -96,8 +121,9 @@ SDispatchResult monocleOn(std::string arg) {
     }
 
     auto firstWindow = windows[0];
-    if (!firstWindow->m_sGroupData.pNextWindow)
-        firstWindow->createGroup();
+    if (!firstWindow->m_sGroupData.pNextWindow) {
+        Monocle::createGroup(firstWindow);
+    }
 
     for (size_t i = 1; i < windows.size(); i++) {
         auto window1 = windows[i-1];
