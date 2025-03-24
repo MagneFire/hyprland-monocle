@@ -52,36 +52,6 @@ void moveWindowIntoGroup(PHLWINDOW pWindow, PHLWINDOW pWindowInDirection) {
         pWindow->addWindowDeco(makeUnique<CHyprGroupBarDecoration>(pWindow));
 }
 
-void moveIntoGroup(std::string args) {
-    char        arg = args[0];
-
-    static auto PIGNOREGROUPLOCK = CConfigValue<Hyprlang::INT>("binds:ignore_group_lock");
-
-    if (!*PIGNOREGROUPLOCK && g_pKeybindManager->m_bGroupsLocked)
-        return;
-
-    if (!isDirection(args)) {
-        Debug::log(ERR, "Cannot move into group in direction {}, unsupported direction. Supported: l,r,u/t,d/b", arg);
-        return;
-    }
-
-    const auto PWINDOW = g_pCompositor->m_pLastWindow.lock();
-
-    if (!PWINDOW || PWINDOW->m_bIsFloating || PWINDOW->m_sGroupData.deny)
-        return;
-
-    auto PWINDOWINDIR = g_pCompositor->getWindowInDirection(PWINDOW, arg);
-
-    if (!PWINDOWINDIR || !PWINDOWINDIR->m_sGroupData.pNextWindow)
-        return;
-
-    // Do not move window into locked group if binds:ignore_group_lock is false
-    if (!*PIGNOREGROUPLOCK && (PWINDOWINDIR->getGroupHead()->m_sGroupData.locked || (PWINDOW->m_sGroupData.pNextWindow && PWINDOW->getGroupHead()->m_sGroupData.locked)))
-        return;
-
-    moveWindowIntoGroup(PWINDOW, PWINDOWINDIR);
-}
-
 void createGroup(PHLWINDOW window) {
     if (window->m_sGroupData.deny) {
         Debug::log(LOG, "createGroup: window:{:x},title:{} is denied as a group, ignored", (uintptr_t)window, window->m_szTitle);
