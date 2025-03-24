@@ -125,8 +125,10 @@ SDispatchResult monocleOff(std::string arg) {
         return SDispatchResult{};
     }
 
-    if (g_pCompositor->m_pLastWindow->m_sGroupData.pNextWindow)
-        HyprlandAPI::invokeHyprctlCommand("dispatch", "togglegroup");
+    if (g_pCompositor->m_pLastWindow->m_sGroupData.pNextWindow) {
+        auto window = g_pCompositor->m_pLastWindow.lock();
+        window->destroyGroup();
+    }
 
     return SDispatchResult{};
 }
