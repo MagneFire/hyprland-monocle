@@ -36,7 +36,7 @@ void moveWindowIntoGroup(PHLWINDOW pWindow, PHLWINDOW pWindowInDirection) {
     if (pWindow->m_sGroupData.deny)
         return;
 
-    g_pLayoutManager->getCurrentLayout()->onWindowRemoved(pWindow); // This removes groupped property!
+    // g_pLayoutManager->getCurrentLayout()->onWindowRemoved(pWindow); // This removes groupped property!
 
     static auto USECURRPOS = CConfigValue<Hyprlang::INT>("group:insert_after_current");
     pWindowInDirection     = *USECURRPOS ? pWindowInDirection : pWindowInDirection->getGroupTail();
@@ -44,7 +44,7 @@ void moveWindowIntoGroup(PHLWINDOW pWindow, PHLWINDOW pWindowInDirection) {
     pWindowInDirection->insertWindowToGroup(pWindow);
     pWindowInDirection->setGroupCurrent(pWindow);
     pWindow->updateWindowDecos();
-    g_pLayoutManager->getCurrentLayout()->recalculateWindow(pWindow);
+    // g_pLayoutManager->getCurrentLayout()->recalculateWindow(pWindow);
     g_pCompositor->focusWindow(pWindow);
     g_pCompositor->warpCursorTo(pWindow->middle());
 
@@ -66,10 +66,10 @@ void createGroup(PHLWINDOW window) {
 
         window->addWindowDeco(makeUnique<CHyprGroupBarDecoration>(window));
 
-        if (window->m_pWorkspace) {
-            window->m_pWorkspace->updateWindows();
-            window->m_pWorkspace->updateWindowData();
-        }
+        // if (window->m_pWorkspace) {
+        //     window->m_pWorkspace->updateWindows();
+        //     window->m_pWorkspace->updateWindowData();
+        // }
         g_pLayoutManager->getCurrentLayout()->recalculateMonitor(window->monitorID());
         g_pCompositor->updateAllWindowsAnimatedDecorationValues();
 
@@ -86,10 +86,10 @@ void destroyGroup(PHLWINDOW window) {
         window->m_sGroupData.pNextWindow.reset();
         window->m_sGroupData.head = false;
         window->updateWindowDecos();
-        if (window->m_pWorkspace) {
-            window->m_pWorkspace->updateWindows();
-            window->m_pWorkspace->updateWindowData();
-        }
+        // if (window->m_pWorkspace) {
+        //     window->m_pWorkspace->updateWindows();
+        //     window->m_pWorkspace->updateWindowData();
+        // }
         g_pLayoutManager->getCurrentLayout()->recalculateMonitor(window->monitorID());
         g_pCompositor->updateAllWindowsAnimatedDecorationValues();
 
@@ -124,10 +124,10 @@ void destroyGroup(PHLWINDOW window) {
     }
     g_pKeybindManager->m_bGroupsLocked = GROUPSLOCKEDPREV;
 
-    if (window->m_pWorkspace) {
-        window->m_pWorkspace->updateWindows();
-        window->m_pWorkspace->updateWindowData();
-    }
+    // if (window->m_pWorkspace) {
+    //     window->m_pWorkspace->updateWindows();
+    //     window->m_pWorkspace->updateWindowData();
+    // }
     g_pLayoutManager->getCurrentLayout()->recalculateMonitor(window->monitorID());
     g_pCompositor->updateAllWindowsAnimatedDecorationValues();
 
