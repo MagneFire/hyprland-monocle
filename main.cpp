@@ -2,6 +2,7 @@
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/debug/Log.hpp>
+#include <hyprland/src/render/Renderer.hpp>
 #include <hyprland/src/managers/LayoutManager.hpp>
 #include <hyprland/src/managers/EventManager.hpp>
 #include <hyprland/src/render/decorations/CHyprGroupBarDecoration.hpp>
@@ -32,6 +33,56 @@ std::vector<PHLWINDOW> getWindowsOnWorkspace() {
     return windows;
 }
 
+void setGroupCurrent(PHLWINDOW sourceWindow, PHLWINDOW pWindow) {
+    PHLWINDOW curr     = sourceWindow->m_sGroupData.pNextWindow.lock();
+    bool      isMember = false;
+    while (curr.get() != sourceWindow.get()) {
+        if (curr == pWindow) {
+            isMember = true;
+            break;
+        }
+        curr = curr->m_sGroupData.pNextWindow.lock();
+    }
+
+    if (!isMember && pWindow.get() != sourceWindow.get())
+        return;
+
+    const auto PCURRENT   = sourceWindow->getGroupCurrent();
+    const bool FULLSCREEN = PCURRENT->isFullscreen();
+    const auto WORKSPACE  = PCURRENT->m_pWorkspace;
+    const auto MODE       = PCURRENT->m_sFullscreenState.internal;
+
+    const auto CURRENTISFOCUS = PCURRENT == g_pCompositor->m_pLastWindow.lock();
+
+    if (FULLSCREEN)
+        g_pCompositor->setWindowFullscreenInternal(PCURRENT, FSMODE_NONE);
+
+    const auto PWINDOWSIZE = PCURRENT->m_vRealSize->goal();
+    const auto PWINDOWPOS  = PCURRENT->m_vRealPosition->goal();
+
+    PCURRENT->setHidden(true);
+    pWindow->setHidden(false); // can remove m_pLastWindow
+
+    g_pLayoutManager->getCurrentLayout()->replaceWindowDataWith(PCURRENT, pWindow);
+
+    if (PCURRENT->m_bIsFloating) {
+        pWindow->m_vRealPosition->setValueAndWarp(PWINDOWPOS);
+        pWindow->m_vRealSize->setValueAndWarp(PWINDOWSIZE);
+    }
+
+    g_pCompositor->updateAllWindowsAnimatedDecorationValues();
+
+    if (CURRENTISFOCUS)
+        g_pCompositor->focusWindow(pWindow);
+
+    if (FULLSCREEN)
+        g_pCompositor->setWindowFullscreenInternal(pWindow, MODE);
+
+    g_pHyprRenderer->damageWindow(pWindow);
+
+    pWindow->updateWindowDecos();
+}
+
 void moveWindowIntoGroup(PHLWINDOW pWindow, PHLWINDOW pWindowInDirection) {
     if (pWindow->m_sGroupData.deny)
         return;
@@ -42,11 +93,11 @@ void moveWindowIntoGroup(PHLWINDOW pWindow, PHLWINDOW pWindowInDirection) {
     pWindowInDirection     = *USECURRPOS ? pWindowInDirection : pWindowInDirection->getGroupTail();
 
     pWindowInDirection->insertWindowToGroup(pWindow);
-    pWindowInDirection->setGroupCurrent(pWindow);
+    setGroupCurrent(pWindowInDirection, pWindow);
     pWindow->updateWindowDecos();
-    // g_pLayoutManager->getCurrentLayout()->recalculateWindow(pWindow);
-    g_pCompositor->focusWindow(pWindow);
-    g_pCompositor->warpCursorTo(pWindow->middle());
+    g_pLayoutManager->getCurrentLayout()->recalculateWindow(pWindow);
+    // g_pCompositor->focusWindow(pWindow);
+    // g_pCompositor->warpCursorTo(pWindow->middle());
 
     if (!pWindow->getDecorationByType(DECORATION_GROUPBAR))
         pWindow->addWindowDeco(makeUnique<CHyprGroupBarDecoration>(pWindow));
@@ -66,10 +117,10 @@ void createGroup(PHLWINDOW window) {
 
         window->addWindowDeco(makeUnique<CHyprGroupBarDecoration>(window));
 
-        // if (window->m_pWorkspace) {
-        //     window->m_pWorkspace->updateWindows();
-        //     window->m_pWorkspace->updateWindowData();
-        // }
+        if (window->m_pWorkspace) {
+            window->m_pWorkspace->updateWindows();
+            window->m_pWorkspace->updateWindowData();
+        }
         g_pLayoutManager->getCurrentLayout()->recalculateMonitor(window->monitorID());
         g_pCompositor->updateAllWindowsAnimatedDecorationValues();
 
@@ -86,10 +137,10 @@ void destroyGroup(PHLWINDOW window) {
         window->m_sGroupData.pNextWindow.reset();
         window->m_sGroupData.head = false;
         window->updateWindowDecos();
-        // if (window->m_pWorkspace) {
-        //     window->m_pWorkspace->updateWindows();
-        //     window->m_pWorkspace->updateWindowData();
-        // }
+        if (window->m_pWorkspace) {
+            window->m_pWorkspace->updateWindows();
+            window->m_pWorkspace->updateWindowData();
+        }
         g_pLayoutManager->getCurrentLayout()->recalculateMonitor(window->monitorID());
         g_pCompositor->updateAllWindowsAnimatedDecorationValues();
 
@@ -111,23 +162,23 @@ void destroyGroup(PHLWINDOW window) {
     } while (curr.get() != window.get());
 
     for (auto const& w : members) {
-        if (w->m_sGroupData.head)
-            g_pLayoutManager->getCurrentLayout()->onWindowRemoved(curr);
+        // if (w->m_sGroupData.head)
+        //     g_pLayoutManager->getCurrentLayout()->onWindowRemoved(curr);
         w->m_sGroupData.head = false;
     }
 
     const bool GROUPSLOCKEDPREV        = g_pKeybindManager->m_bGroupsLocked;
     g_pKeybindManager->m_bGroupsLocked = true;
     for (auto const& w : members) {
-        g_pLayoutManager->getCurrentLayout()->onWindowCreated(w);
+        // g_pLayoutManager->getCurrentLayout()->onWindowCreated(w);
         w->updateWindowDecos();
     }
     g_pKeybindManager->m_bGroupsLocked = GROUPSLOCKEDPREV;
 
-    // if (window->m_pWorkspace) {
-    //     window->m_pWorkspace->updateWindows();
-    //     window->m_pWorkspace->updateWindowData();
-    // }
+    if (window->m_pWorkspace) {
+        window->m_pWorkspace->updateWindows();
+        window->m_pWorkspace->updateWindowData();
+    }
     g_pLayoutManager->getCurrentLayout()->recalculateMonitor(window->monitorID());
     g_pCompositor->updateAllWindowsAnimatedDecorationValues();
 
@@ -158,11 +209,16 @@ SDispatchResult monocleOn(std::string arg) {
     for (size_t i = 1; i < windows.size(); i++) {
         auto window1 = windows[i-1];
         auto window2 = windows[i];
-        g_pCompositor->focusWindow(window2);
+        // g_pCompositor->focusWindow(window2);
         Monocle::moveWindowIntoGroup(window2, window1);
     }
 
-    g_pCompositor->focusWindow(currentWindow.lock());
+    // g_pCompositor->focusWindow(currentWindow.lock());
+
+    // TODO:
+    // hyprctl keyword misc:new_window_takes_over_fullscreen 1
+    // hyprctl keyword misc:exit_window_retains_fullscreen true
+    g_pCompositor->setWindowFullscreenInternal(currentWindow.lock(), FSMODE_MAXIMIZED);
 
     return SDispatchResult{};
 }
@@ -184,6 +240,8 @@ SDispatchResult monocleOff(std::string arg) {
     if (g_pCompositor->m_pLastWindow->m_sGroupData.pNextWindow) {
         auto window = g_pCompositor->m_pLastWindow.lock();
         Monocle::destroyGroup(window);
+
+        g_pCompositor->setWindowFullscreenInternal(window, FSMODE_NONE);
     }
 
     return SDispatchResult{};
