@@ -12,6 +12,9 @@ inline HANDLE PHANDLE = nullptr;
 
 std::vector<int> workspaces;
 
+SP<HOOK_CALLBACK_FN> m_pOpenWindowCallback;
+SP<HOOK_CALLBACK_FN> m_pActiveWindowCallback;
+
 namespace Monocle {
 
 template <typename... Args>
@@ -20,17 +23,39 @@ void log(eLogLevel level, std::format_string<Args...> fmt, Args&&... args) {
     Debug::log(level, "[Monocle] {}", msg);
 }
 
-std::vector<PHLWINDOW> getWindowsOnWorkspace() {
+std::vector<PHLWINDOW> getWindowsOnWorkspace(int workspace) {
     std::vector<PHLWINDOW> windows = {};
 
     for (auto& w : g_pCompositor->m_vWindows) {
         int workspaceID = w->workspaceID();
-        int currentWorkspace = g_pCompositor->m_pLastMonitor->activeWorkspaceID();
-        if (workspaceID == currentWorkspace)
+        if (workspaceID == workspace)
             windows.push_back(w);
     }
 
     return windows;
+}
+
+std::vector<PHLWINDOW> getWindowsOnActiveWorkspace() {
+    int currentWorkspace = g_pCompositor->m_pLastMonitor->activeWorkspaceID();
+    return getWindowsOnWorkspace(currentWorkspace);
+}
+
+bool isGrouped(int workspace) {
+    auto windows = getWindowsOnWorkspace(workspace);
+
+    for (size_t i = 0; i < windows.size(); i++) {
+        auto window = windows[i];
+        if (!window->m_sGroupData.pNextWindow.expired()) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool isCurrentWorkspaceGrouped() {
+    auto currentWorkspace = g_pCompositor->m_pLastMonitor->activeWorkspaceID();
+    return isGrouped(currentWorkspace);
 }
 
 void setGroupCurrent(PHLWINDOW sourceWindow, PHLWINDOW pWindow) {
@@ -87,17 +112,12 @@ void moveWindowIntoGroup(PHLWINDOW pWindow, PHLWINDOW pWindowInDirection) {
     if (pWindow->m_sGroupData.deny)
         return;
 
-    // g_pLayoutManager->getCurrentLayout()->onWindowRemoved(pWindow); // This removes groupped property!
-
     static auto USECURRPOS = CConfigValue<Hyprlang::INT>("group:insert_after_current");
     pWindowInDirection     = *USECURRPOS ? pWindowInDirection : pWindowInDirection->getGroupTail();
 
     pWindowInDirection->insertWindowToGroup(pWindow);
-    setGroupCurrent(pWindowInDirection, pWindow);
     pWindow->updateWindowDecos();
     g_pLayoutManager->getCurrentLayout()->recalculateWindow(pWindow);
-    // g_pCompositor->focusWindow(pWindow);
-    // g_pCompositor->warpCursorTo(pWindow->middle());
 
     if (!pWindow->getDecorationByType(DECORATION_GROUPBAR))
         pWindow->addWindowDeco(makeUnique<CHyprGroupBarDecoration>(pWindow));
@@ -162,15 +182,12 @@ void destroyGroup(PHLWINDOW window) {
     } while (curr.get() != window.get());
 
     for (auto const& w : members) {
-        // if (w->m_sGroupData.head)
-        //     g_pLayoutManager->getCurrentLayout()->onWindowRemoved(curr);
         w->m_sGroupData.head = false;
     }
 
     const bool GROUPSLOCKEDPREV        = g_pKeybindManager->m_bGroupsLocked;
     g_pKeybindManager->m_bGroupsLocked = true;
     for (auto const& w : members) {
-        // g_pLayoutManager->getCurrentLayout()->onWindowCreated(w);
         w->updateWindowDecos();
     }
     g_pKeybindManager->m_bGroupsLocked = GROUPSLOCKEDPREV;
@@ -189,16 +206,16 @@ void destroyGroup(PHLWINDOW window) {
 
 }
 
-SDispatchResult monocleOn(std::string arg) {
+void monocleOn() {
     const auto currentWindow = g_pCompositor->m_pLastWindow;
 
     int currentWorkspace = g_pCompositor->m_pLastMonitor->activeWorkspaceID();
     workspaces.push_back(currentWorkspace);
 
-    std::vector<PHLWINDOW> windows = Monocle::getWindowsOnWorkspace();
+    std::vector<PHLWINDOW> windows = Monocle::getWindowsOnActiveWorkspace();
 
     if (windows.empty()) {
-        return SDispatchResult{};
+        return;
     }
 
     auto firstWindow = windows[0];
@@ -207,23 +224,13 @@ SDispatchResult monocleOn(std::string arg) {
     }
 
     for (size_t i = 1; i < windows.size(); i++) {
-        auto window1 = windows[i-1];
-        auto window2 = windows[i];
-        // g_pCompositor->focusWindow(window2);
-        Monocle::moveWindowIntoGroup(window2, window1);
+        Monocle::moveWindowIntoGroup(windows[i], firstWindow);
     }
 
-    // g_pCompositor->focusWindow(currentWindow.lock());
-
-    // TODO:
-    // hyprctl keyword misc:new_window_takes_over_fullscreen 1
-    // hyprctl keyword misc:exit_window_retains_fullscreen true
     g_pCompositor->setWindowFullscreenInternal(currentWindow.lock(), FSMODE_MAXIMIZED);
-
-    return SDispatchResult{};
 }
 
-SDispatchResult monocleOff(std::string arg) {
+void monocleOff() {
     int currentWorkspace = g_pCompositor->m_pLastMonitor->activeWorkspaceID();
     size_t toRemove = SIZE_MAX;
     for (size_t i = 0; i < workspaces.size(); i++) {
@@ -234,7 +241,7 @@ SDispatchResult monocleOff(std::string arg) {
         workspaces.erase(workspaces.begin() + toRemove);
 
     if (g_pCompositor->m_pLastWindow.expired()) {
-        return SDispatchResult{};
+        return;
     }
 
     if (g_pCompositor->m_pLastWindow->m_sGroupData.pNextWindow) {
@@ -243,18 +250,38 @@ SDispatchResult monocleOff(std::string arg) {
 
         g_pCompositor->setWindowFullscreenInternal(window, FSMODE_NONE);
     }
-
-    return SDispatchResult{};
 }
 
-SDispatchResult monocleToggle(std::string arg) {
-    int currentWorkspace = g_pCompositor->m_pLastMonitor->activeWorkspaceID();
-    if (std::find(workspaces.begin(), workspaces.end(), currentWorkspace) != workspaces.end()) 
-        monocleOff("");
+void monocleToggle() {
+    if (Monocle::isCurrentWorkspaceGrouped()) 
+        monocleOff();
     else 
-        monocleOn("");
+        monocleOn();
+}
 
-    return SDispatchResult{};
+static void onNewWindow(void* self, std::any data) {
+    const auto PWINDOW = std::any_cast<PHLWINDOW>(data);
+
+    if (!Monocle::isCurrentWorkspaceGrouped()) {
+        return;
+    }
+
+    std::vector<PHLWINDOW> windows = Monocle::getWindowsOnActiveWorkspace();
+
+    Monocle::moveWindowIntoGroup(PWINDOW, windows[0]);
+}
+
+static void onFocusWindow(void* self, std::any data) {
+    const auto PWINDOW = std::any_cast<PHLWINDOW>(data);
+    if (PWINDOW == nullptr) {
+        return;
+    }
+
+    if (!Monocle::isCurrentWorkspaceGrouped()) {
+        return;
+    }
+
+    g_pCompositor->setWindowFullscreenInternal(PWINDOW, FSMODE_MAXIMIZED);
 }
 
 // Do NOT change this function.
@@ -270,16 +297,18 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     // ALWAYS add this to your plugins. It will prevent random crashes coming from
     // mismatched header versions.
     if (HASH != GIT_COMMIT_HASH) {
-        HyprlandAPI::addNotification(PHANDLE, "[MyPlugin] Mismatched headers! Can't proceed.",
+        HyprlandAPI::addNotification(PHANDLE, "[Monocle] Mismatched headers! Can't proceed.",
                                      CHyprColor{1.0, 0.2, 0.2, 1.0}, 5000);
-        throw std::runtime_error("[MyPlugin] Version mismatch");
+        throw std::runtime_error("[Monocle] Version mismatch");
     }
 
-    HyprlandAPI::addDispatcherV2(PHANDLE, "monocle:on", ::monocleOn);
-    HyprlandAPI::addDispatcherV2(PHANDLE, "monocle:off", ::monocleOff);
-    HyprlandAPI::addDispatcherV2(PHANDLE, "monocle:toggle", ::monocleToggle);
+    HyprlandAPI::addDispatcherV2(PHANDLE, "monocle:on", [&](std::string data) { monocleOn(); return SDispatchResult{};});
+    HyprlandAPI::addDispatcherV2(PHANDLE, "monocle:off", [&](std::string data) { monocleOff(); return SDispatchResult{};});
+    HyprlandAPI::addDispatcherV2(PHANDLE, "monocle:toggle", [&](std::string data) { monocleToggle(); return SDispatchResult{};});
+    m_pOpenWindowCallback = HyprlandAPI::registerCallbackDynamic(PHANDLE, "openWindow", [&](void* self, SCallbackInfo& info, std::any data) { onNewWindow(self, data); });
+    m_pActiveWindowCallback = HyprlandAPI::registerCallbackDynamic(PHANDLE, "activeWindow", [&](void* self, SCallbackInfo& info, std::any data) { onFocusWindow(self, data); });
 
-    return {"MyPlugin", "An amazing plugin that is going to change the world!", "Me", "1.0"};
+    return {"Monocle", "An amazing plugin that is going to change the world!", "Me", "1.0"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
