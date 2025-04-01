@@ -58,56 +58,6 @@ bool isCurrentWorkspaceGrouped() {
     return isGrouped(currentWorkspace);
 }
 
-void setGroupCurrent(PHLWINDOW sourceWindow, PHLWINDOW pWindow) {
-    PHLWINDOW curr     = sourceWindow->m_sGroupData.pNextWindow.lock();
-    bool      isMember = false;
-    while (curr.get() != sourceWindow.get()) {
-        if (curr == pWindow) {
-            isMember = true;
-            break;
-        }
-        curr = curr->m_sGroupData.pNextWindow.lock();
-    }
-
-    if (!isMember && pWindow.get() != sourceWindow.get())
-        return;
-
-    const auto PCURRENT   = sourceWindow->getGroupCurrent();
-    const bool FULLSCREEN = PCURRENT->isFullscreen();
-    const auto WORKSPACE  = PCURRENT->m_pWorkspace;
-    const auto MODE       = PCURRENT->m_sFullscreenState.internal;
-
-    const auto CURRENTISFOCUS = PCURRENT == g_pCompositor->m_pLastWindow.lock();
-
-    if (FULLSCREEN)
-        g_pCompositor->setWindowFullscreenInternal(PCURRENT, FSMODE_NONE);
-
-    const auto PWINDOWSIZE = PCURRENT->m_vRealSize->goal();
-    const auto PWINDOWPOS  = PCURRENT->m_vRealPosition->goal();
-
-    PCURRENT->setHidden(true);
-    pWindow->setHidden(false); // can remove m_pLastWindow
-
-    g_pLayoutManager->getCurrentLayout()->replaceWindowDataWith(PCURRENT, pWindow);
-
-    if (PCURRENT->m_bIsFloating) {
-        pWindow->m_vRealPosition->setValueAndWarp(PWINDOWPOS);
-        pWindow->m_vRealSize->setValueAndWarp(PWINDOWSIZE);
-    }
-
-    g_pCompositor->updateAllWindowsAnimatedDecorationValues();
-
-    if (CURRENTISFOCUS)
-        g_pCompositor->focusWindow(pWindow);
-
-    if (FULLSCREEN)
-        g_pCompositor->setWindowFullscreenInternal(pWindow, MODE);
-
-    g_pHyprRenderer->damageWindow(pWindow);
-
-    pWindow->updateWindowDecos();
-}
-
 void moveWindowIntoGroup(PHLWINDOW pWindow, PHLWINDOW pWindowInDirection) {
     if (pWindow->m_sGroupData.deny)
         return;
