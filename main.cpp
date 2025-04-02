@@ -223,6 +223,10 @@ static void onNewWindow(void* self, std::any data) {
         return;
     }
 
+    if (PWINDOW->m_bIsFloating) {
+        return;
+    }
+
     std::vector<PHLWINDOW> windows = Monocle::getWindowsOnActiveWorkspace();
 
     Monocle::moveWindowIntoGroup(PWINDOW, windows[0]);
@@ -240,50 +244,23 @@ static void onFocusWindow(void* self, std::any data) {
         return;
     }
 
+    if (PWINDOW->m_bIsFloating) {
+        return;
+    }
+
     if (!Monocle::isCurrentWorkspaceGrouped()) {
         return;
     }
 
-    // HyprlandAPI::addNotification(PHANDLE, "[Monocle] Focus window.", CHyprColor{1.0, 0.2, 0.2, 1.0}, 5000);
     g_pCompositor->setWindowFullscreenInternal(PWINDOW, FSMODE_MAXIMIZED);
 }
 
-PHLWORKSPACE getWorkspace() {
-    std::vector<PHLWINDOW> windows = Monocle::getWindowsOnActiveWorkspace();
-    for (size_t i = 0; i < windows.size(); i++) {
-        auto window = windows[i];
-
-        if (window->m_pWorkspace) {
-            return window->m_pWorkspace;
-        }
-    }
-    return nullptr;
-}
-
 static void onFullscreenWindow(void* self, std::any data) {
-
-    // std::vector<PHLWINDOW> windows = Monocle::getWindowsOnActiveWorkspace();
+    // Ungroup on un-maximize.
     Debug::log(LOG, "onFullscreenWindow: AAAAAA");
+    const auto PWORKSPACE = g_pCompositor->m_pLastMonitor->activeWorkspace;
 
-    // if (windows.empty()) {
-    //     Debug::log(LOG, "onFullscreenWindow: AAAAAA Exit");
-    //     return;
-    // }
-
-    // auto firstWindow = windows[0];
-
-    // const auto PWINDOW = firstWindow;
-
-    // if (PWINDOW == nullptr) {
-    //     Debug::log(LOG, "onFullscreenWindow: AAAAAA Exit 2");
-    //     return;
-    // }
-    // Debug::log(LOG, "onFullscreenWindow: BBBBBB");
-    // // Debug::log(LOG, "onFullscreenWindow: window:{:x},title:{}", (uintptr_t)PWINDOW, PWINDOW->m_szTitle);
-    // // HyprlandAPI::addNotification(PHANDLE, "[Monocle] START Disabling fullscreen group.", CHyprColor{1.0, 0.2, 0.2, 1.0}, 5000);
-
-    const auto PWORKSPACE = getWorkspace();
-
+    Debug::log(LOG, "onFullscreenWindow: BBBBBBBB");
     if (!PWORKSPACE) {
         return;
     }
@@ -302,20 +279,10 @@ static void onFullscreenWindow(void* self, std::any data) {
     }
 
     Debug::log(LOG, "onFullscreenWindow: EEEE");
-    // int currentWorkspace = g_pCompositor->m_pLastMonitor->activeWorkspaceID();
-    // workspaces_ungrouped.push_back(currentWorkspace);
 
-    // Ungroup upon un-maximize.
     monocleOff();
 
     Debug::log(LOG, "onFullscreenWindow: DDDDD");
-    // HyprlandAPI::addNotification(PHANDLE, "[Monocle] Disabling fullscreen group.", CHyprColor{1.0, 0.2, 0.2, 1.0}, 5000);
-}
-
-void tickRaw(SP<CEventLoopTimer> self, void* data) {
-
-    // const int TIMEOUT = g_pHyprRenderer->m_pMostHzMonitor ? 1000.0 / g_pHyprRenderer->m_pMostHzMonitor->refreshRate : 16;
-    // self->updateTimeout(std::chrono::milliseconds(TIMEOUT));
 }
 
 // Do NOT change this function.
@@ -336,25 +303,16 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         throw std::runtime_error("[Monocle] Version mismatch");
     }
 
-    // m_pFullscreenTimer = SP<CEventLoopTimer>(new CEventLoopTimer(std::chrono::microseconds(500), tickRaw, nullptr));
-    // g_pEventLoopManager->addTimer(m_pFullscreenTimer);
-
     HyprlandAPI::addDispatcherV2(PHANDLE, "monocle:on", [&](std::string data) { monocleOn(); return SDispatchResult{};});
     HyprlandAPI::addDispatcherV2(PHANDLE, "monocle:off", [&](std::string data) { monocleOff(); return SDispatchResult{};});
     HyprlandAPI::addDispatcherV2(PHANDLE, "monocle:toggle", [&](std::string data) { monocleToggle(); return SDispatchResult{};});
     m_pOpenWindowCallback = HyprlandAPI::registerCallbackDynamic(PHANDLE, "openWindow", [&](void* self, SCallbackInfo& info, std::any data) { onNewWindow(self, data); });
     m_pActiveWindowCallback = HyprlandAPI::registerCallbackDynamic(PHANDLE, "activeWindow", [&](void* self, SCallbackInfo& info, std::any data) { onFocusWindow(self, data); });
-    // m_pFullscreenWindowCallback = HyprlandAPI::registerCallbackDynamic(PHANDLE, "fullscreen", [&](void* self, SCallbackInfo& info, std::any data) { onFullscreenWindow(self, data); });
     m_pFullscreenWindowCallback = HyprlandAPI::registerCallbackDynamic(PHANDLE, "fullscreen", [&](void* self, SCallbackInfo& info, std::any data) {
-        // onFullscreenWindow(self, data);
-        g_pEventLoopManager->doLater([self, data]() {
-            onFullscreenWindow(self, data);
-            // if (!g_pHyprError->active())
-            //     return;
-            // for (auto& m : g_pCompositor->m_vMonitors) {
-            //     arrangeLayersForMonitor(m->ID);
-            // }
-        });
+        const auto PWINDOW = std::any_cast<PHLWINDOW>(data);
+        const auto workspace = PWINDOW->m_pWorkspace;
+
+        g_pEventLoopManager->doLater([self, workspace]() { onFullscreenWindow(self, workspace); });
     });
     return {"Monocle", "An amazing plugin that is going to change the world!", "Me", "1.0"};
 }
