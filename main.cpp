@@ -230,15 +230,10 @@ static void onNewWindow(void* self, std::any data) {
     std::vector<PHLWINDOW> windows = Monocle::getWindowsOnActiveWorkspace();
 
     Monocle::moveWindowIntoGroup(PWINDOW, windows[0]);
-
-    // HyprlandAPI::addNotification(PHANDLE, "[Monocle] Moving new window into group.", CHyprColor{1.0, 0.2, 0.2, 1.0}, 5000);
 }
 
 static void onFocusWindow(void* self, std::any data) {
-    // HyprlandAPI::addNotification(PHANDLE, "[Monocle] START focus window.", CHyprColor{1.0, 0.2, 0.2, 1.0}, 5000);
     const auto PWINDOW = std::any_cast<PHLWINDOW>(data);
-
-    Debug::log(LOG, "onFocusWindow: window:{:x}", (uintptr_t)PWINDOW);
 
     if (PWINDOW == nullptr) {
         return;
@@ -257,32 +252,21 @@ static void onFocusWindow(void* self, std::any data) {
 
 static void onFullscreenWindow(void* self, std::any data) {
     // Ungroup on un-maximize.
-    Debug::log(LOG, "onFullscreenWindow: AAAAAA");
     const auto PWORKSPACE = g_pCompositor->m_pLastMonitor->activeWorkspace;
 
-    Debug::log(LOG, "onFullscreenWindow: BBBBBBBB");
     if (!PWORKSPACE) {
         return;
     }
 
-    Debug::log(LOG, "onFullscreenWindow: CCCCCCCCCC");
     if (PWORKSPACE->m_bHasFullscreenWindow) {
-        Debug::log(LOG, "onFullscreenWindow: CCCCCCCCCC EXIT");
         return;
     }
-
-    Debug::log(LOG, "onFullscreenWindow: DDDDDD");
 
     if (!Monocle::isCurrentWorkspaceGrouped()) {
-        Debug::log(LOG, "onFullscreenWindow: DDDDDD EXIT");
         return;
     }
 
-    Debug::log(LOG, "onFullscreenWindow: EEEE");
-
     monocleOff();
-
-    Debug::log(LOG, "onFullscreenWindow: DDDDD");
 }
 
 // Do NOT change this function.
@@ -311,7 +295,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     m_pFullscreenWindowCallback = HyprlandAPI::registerCallbackDynamic(PHANDLE, "fullscreen", [&](void* self, SCallbackInfo& info, std::any data) {
         const auto PWINDOW = std::any_cast<PHLWINDOW>(data);
         const auto workspace = PWINDOW->m_pWorkspace;
-
+        // Delay execution to allow new window event to handle first.
         g_pEventLoopManager->doLater([self, workspace]() { onFullscreenWindow(self, workspace); });
     });
     return {"Monocle", "An amazing plugin that is going to change the world!", "Me", "1.0"};
