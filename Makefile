@@ -9,7 +9,7 @@ install: all
 	cp $(PLUGIN_NAME).so ${INSTALL_LOCATION}
 
 $(PLUGIN_NAME).so: $(SOURCE_FILES)
-	g++ -shared -Wall -fPIC $(SOURCE_FILES) -g  -DWLR_USE_UNSTABLE `pkg-config --cflags pixman-1 libdrm hyprland pangocairo` -std=c++23 -o $(PLUGIN_NAME).so
+	g++ -shared -Wall -fPIC $(SOURCE_FILES) -g  -DWLR_USE_UNSTABLE `pkg-config --cflags hyprland | awk '{print $$NF "/src";}'` `pkg-config --cflags pixman-1 libdrm hyprland pangocairo` -std=c++23 -o $(PLUGIN_NAME).so
 	# g++ -shared -Wall -fPIC --no-gnu-unique $(SOURCE_FILES) -g  -DWLR_USE_UNSTABLE `pkg-config --cflags pixman-1 libdrm hyprland pangocairo` -std=c++23 -o $(PLUGIN_NAME).so
 
 clean:
